@@ -157,9 +157,15 @@ class Connection:
         }
 
         self.send_encrypted_message(msg)
-        response = self.get_encrypted_response()
+        try:
+            response = self.get_encrypted_response()
+        except ResponseUnsuccesfulException as e:
+            if int(e.args[0]['errorCode']) == 15:
+                return None
+            raise
+
         if not response["count"]:
-            return False
+            return None
         else:
             return response["entries"]
 

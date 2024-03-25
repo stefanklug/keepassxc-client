@@ -1,100 +1,69 @@
 import sys
 import json
+from os import path
 import base64
+import argparse
+import configparser
+from keepassxc_proxy_client import protocol
+#import protocol
 
-import keepassxc_proxy_client
-import keepassxc_proxy_client.protocol
+def command_create(args):
+    connection = protocol.Connection()
+    connection.connect()
+    connection.associate()
 
-USAGE = """usage: keepassxc_proxy_client
+    if not connection.test_associate():
+        print("For some reason the newly created association is invalid, this should not be happening")
+        sys.exit(1)
 
-keepassxc_proxy_client create: Connects to a locally running keepassxc instance,
-creates a new association with it (this will prompt a dialogue from keepassxc)
-and prints it to stdout as JSON. Note that the public key that is printed is
-secret and can allow anyone with access to your local machine access to all
-passwords that are related to a URL, thus it should be stored safely.
+    name, public_key = connection.dump_associate()
+    key = base64.b64encode(public_key).decode('utf-8')
+    print(f"# Add the following to {args.config} ")
+    print(f"[connection]")
+    print(f"    name = {name}")
+    print(f"    key = {key}")
 
-keepassxc_proxy_client get <file> <url>: Reads a keepassxc association from
-<file> and attempts to get the first password for <url>. Will exit with 1 if the
-association is not valid for the running keepassxc instance or the no logins are
-found for the given URL.
+def command_get(args):
+    full_path = path.expanduser(args.config) 
+    config = configparser.ConfigParser()
+    config.read(full_path)
 
-keepassxc_proxy_client unlock <file>: Causes a running KeepassXC instance
-to launch a dialogue window to allow the user to unlock a locked database.
-If the database is already unlocked it has no effect.
-"""
+    connection = protocol.Connection()
+    connection.connect()
+    connection.load_associate(
+        config['connection']['name'],
+        base64.b64decode(config['connection']['key'])
+    )
+
+    if not connection.test_associate():
+        print("The loaded association is invalid", file=sys.stderr)
+        sys.exit(1)
+
+    logins = connection.get_logins(args.url)
+    if not logins:
+        print("No logins found for the given URL", file=sys.stderr)
+        sys.exit(1)
+
+    end = '' if args.n else '\n'
+
+    if args.user:
+        print(logins[0]['login'], end=end)
+    else:
+        print(logins[0]['password'], end=end)
 
 
 def main():
-    if len(sys.argv) < 2 or sys.argv[1] in ["-h", "--help","help", "h"]:
-        print(USAGE)
-        sys.exit(0)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-c", "--config", type=str, default='~/.keepassxc-client', help="Config file to read")
 
-    command = sys.argv[1]
+    subparsers = parser.add_subparsers(required=True)
+    subparser = subparsers.add_parser('create', help='Create a new association')
+    subparser.set_defaults(func=command_create)
 
-    if command == "create":
-        connection = keepassxc_proxy_client.protocol.Connection()
-        connection.connect()
-        connection.associate()
-
-        if not connection.test_associate():
-            print("For some reason the newly created association is invalid, this should not be happening")
-            sys.exit(1)
-
-        name, public_key = connection.dump_associate()
-        out = {
-            "name": name,
-            "public_key": base64.b64encode(public_key).decode("utf-8")
-        }
-        print(json.dumps(out))
-        sys.exit(0)
-
-    elif command == "get":
-        if len(sys.argv) < 4:
-            print("Too little arguments provided, see --help for usage")
-            sys.exit(1)
-
-        associate_file = sys.argv[2]
-        url = sys.argv[3]
-
-        association = json.load(open(associate_file, "r"))
-
-        connection = keepassxc_proxy_client.protocol.Connection()
-        connection.connect()
-        connection.load_associate(
-            association["name"],
-            base64.b64decode(association["public_key"].encode("utf-8"))
-        )
-
-        if not connection.test_associate():
-            print("The loaded association is invalid")
-            sys.exit(1)
-
-        logins = connection.get_logins(url)
-        if not logins:
-            print("No logins found for the given URL")
-            sys.exit(1)
-
-        print(logins[0]["password"])
-        sys.exit(0)
-    elif command == "unlock":
-        if len(sys.argv) < 3:
-            print("Too few arguments provided, see --help for usage")
-            sys.exit(1)
-
-        associate_file = sys.argv[2]
-        association = json.load(open(associate_file, "r"))
-
-        connection = keepassxc_proxy_client.protocol.Connection()
-        connection.connect()
-
-        connection.load_associate(
-            association["name"],
-            base64.b64decode(association["public_key"].encode("utf-8"))
-        )
-
-        print(connection.test_associate(True))
-
-        sys.exit(0)
-    else:
-        print("Unkown subcommand, see --help for usage")
-        sys.exit(1)
+    subparser = subparsers.add_parser('get', help='Create a new association')
+    subparser.set_defaults(func=command_get)
+    subparser.add_argument('url')
+    subparser.add_argument('-n', action='store_true', help='do not output the trailing newline')
+    subparser.add_argument('-u', '--user', action='store_true', help='Print the user/login instead of the password')
+    args = parser.parse_args()
+    args.func(args)

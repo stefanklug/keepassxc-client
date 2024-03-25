@@ -17,7 +17,7 @@ with open('requirements.txt') as f:
 
 
 setup(
-    name="keepassxc-proxy-client",
+    name="keepassxc-client",
     version=__version__,
     author="Henrik Boeving",
     author_email="hargonix@gmail.com",
@@ -31,7 +31,7 @@ setup(
     },
     packages=["keepassxc_proxy_client"],
     zip_safe=True,
-    entry_points={"console_scripts": ["keepassxc_proxy_client = keepassxc_proxy_client.__main__:main"]},
+    entry_points={"console_scripts": ["keepassxc-client = keepassxc_proxy_client.__main__:main"]},
     install_requires=required,
     classifiers=[
         "Development Status :: 4 - Beta",
